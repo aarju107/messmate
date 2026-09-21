@@ -1,177 +1,149 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import AdminNavbar from '../../components/AdminNavbar';
+import { Alert, Card, PageHeader, Spinner, StatusBadge, btn, btnBase } from '../../components/ui';
+import { useMe } from '../../lib/useMe';
+
+const FILTERS = ['All', 'Pending', 'Resolved'];
 
 export default function AdminComplaints() {
-  const router = useRouter();
+  const { user, loading: authLoading } = useMe('admin');
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updating, setUpdating] = useState({});
+  const [filter, setFilter] = useState('All');
 
-  // Fetch all complaints
   useEffect(() => {
-    const fetchComplaints = async () => {
+    if (!user) return;
+    (async () => {
       try {
-        console.log('🔍 Fetching all complaints...');
-        const response = await fetch('/api/complaints');
-        const data = await response.json();
-
-        if (!response.ok) {
-          console.log('⚠️ Error fetching complaints:', data.error);
-          setError(data.error || 'Failed to load complaints');
-          setLoading(false);
-          return;
-        }
-
-        console.log('✅ Complaints fetched:', data.complaints.length);
-        setComplaints(data.complaints);
-        setLoading(false);
-
-      } catch (error) {
-        console.error('❌ Error:', error.message);
+        const res = await fetch('/api/complaints');
+        const data = await res.json();
+        if (!res.ok) setError(data.error || 'Failed to load complaints');
+        else setComplaints(data.complaints);
+      } catch {
         setError('Failed to load complaints');
+      } finally {
         setLoading(false);
       }
-    };
+    })();
+  }, [user]);
 
-    fetchComplaints();
-  }, []);
-
-  // Mark complaint as resolved
-  const handleResolve = async (complaintId) => {
-    setUpdating(prev => ({ ...prev, [complaintId]: true }));
-
+  const setStatus = async (id, status) => {
+    setUpdating((p) => ({ ...p, [id]: true }));
+    setError('');
     try {
-      console.log('📤 Updating complaint status...');
-      const response = await fetch(`/api/complaints/${complaintId}`, {
+      const res = await fetch(`/api/complaints/${id}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status: 'Resolved' }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log('⚠️ Error:', data.error);
-        setUpdating(prev => ({ ...prev, [complaintId]: false }));
-        return;
-      }
-
-      console.log('✅ Complaint updated');
-
-      // Update local state
-      setComplaints(prev =>
-        prev.map(complaint =>
-          complaint._id === complaintId
-            ? { ...complaint, status: 'Resolved' }
-            : complaint
-        )
-      );
-
-      setUpdating(prev => ({ ...prev, [complaintId]: false }));
-
-    } catch (error) {
-      console.error('❌ Error:', error.message);
-      setUpdating(prev => ({ ...prev, [complaintId]: false }));
+      const data = await res.json();
+      if (!res.ok) setError(data.error || 'Failed to update complaint');
+      else setComplaints((prev) => prev.map((c) => (c._id === id ? { ...c, status } : c)));
+    } catch {
+      setError('Network error');
+    } finally {
+      setUpdating((p) => ({ ...p, [id]: false }));
     }
   };
 
+  const count = (f) => (f === 'All' ? complaints.length : complaints.filter((c) => c.status === f).length);
+  const visible = filter === 'All' ? complaints : complaints.filter((c) => c.status === filter);
+
+  const action = (c) =>
+    c.status === 'Pending' ? (
+      <button onClick={() => setStatus(c._id, 'Resolved')} disabled={updating[c._id]} className={`${btnBase} ${btn.purple} !py-1.5`}>
+        {updating[c._id] ? 'Saving...' : 'Resolve'}
+      </button>
+    ) : (
+      <button onClick={() => setStatus(c._id, 'Pending')} disabled={updating[c._id]} className={`${btnBase} ${btn.ghost} !py-1.5`}>
+        {updating[c._id] ? 'Saving...' : 'Reopen'}
+      </button>
+    );
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+    <div className="min-h-screen bg-slate-50">
       <AdminNavbar />
+      {authLoading || !user ? (
+        <Spinner />
+      ) : (
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+          <PageHeader title="Student complaints" subtitle="Review issues raised by students and mark them resolved." />
 
-      <div className="max-w-6xl mx-auto px-6 py-12">
-        <h1 className="text-4xl font-bold text-gray-900 mb-8 text-center">
-          🎫 Student Complaints
-        </h1>
-
-        {loading && (
-          <div className="text-center text-gray-600">Loading complaints...</div>
-        )}
-
-        {error && (
-          <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg mb-6">
-            {error}
+          <div className="flex gap-2 mb-5" role="tablist" aria-label="Filter complaints">
+            {FILTERS.map((f) => (
+              <button key={f} role="tab" aria-selected={filter === f} onClick={() => setFilter(f)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition ${filter === f ? 'bg-purple-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+                {f} <span className={filter === f ? 'text-purple-200' : 'text-slate-400'}>{count(f)}</span>
+              </button>
+            ))}
           </div>
-        )}
 
-        {!loading && complaints.length === 0 && (
-          <div className="text-center text-gray-600 py-12">
-            No complaints yet. Great! ✨
-          </div>
-        )}
+          <Alert type="error" className="mb-5">{error}</Alert>
 
-        {!loading && complaints.length > 0 && (
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <table className="w-full">
-              {/* Header */}
-              <thead className="bg-gray-100 border-b">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Student</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Title</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Description</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Date</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Action</th>
-                </tr>
-              </thead>
+          {loading ? (
+            <Spinner label="Loading complaints..." />
+          ) : visible.length === 0 ? (
+            <Card className="text-center py-12 text-slate-500">
+              {filter === 'All' ? 'No complaints yet. Great! ✨' : `No ${filter.toLowerCase()} complaints.`}
+            </Card>
+          ) : (
+            <>
+              {/* Desktop table */}
+              <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      {['Student', 'Complaint', 'Status', 'Date', ''].map((h) => (
+                        <th key={h} className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {visible.map((c) => (
+                      <tr key={c._id} className="hover:bg-slate-50 align-top">
+                        <td className="px-5 py-4 text-sm">
+                          <p className="font-medium text-slate-900">{c.studentId?.name || 'Unknown'}</p>
+                          <p className="text-slate-500">{c.studentId?.email || 'N/A'}</p>
+                        </td>
+                        <td className="px-5 py-4 text-sm max-w-md">
+                          <p className="font-medium text-slate-900">{c.title}</p>
+                          <p className="text-slate-600 break-words">{c.description}</p>
+                        </td>
+                        <td className="px-5 py-4"><StatusBadge status={c.status} /></td>
+                        <td className="px-5 py-4 text-sm text-slate-500 whitespace-nowrap">{new Date(c.createdAt).toLocaleDateString()}</td>
+                        <td className="px-5 py-4 text-right">{action(c)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-              {/* Body */}
-              <tbody>
-                {complaints.map((complaint) => (
-                  <tr key={complaint._id} className="border-b hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      <div>
-                        <p className="font-medium">{complaint.studentId?.name || 'Unknown'}</p>
-                        <p className="text-gray-600">{complaint.studentId?.email || 'N/A'}</p>
+              {/* Mobile cards */}
+              <ul className="md:hidden space-y-3">
+                {visible.map((c) => (
+                  <li key={c._id}>
+                    <Card>
+                      <div className="flex justify-between gap-3 mb-2">
+                        <p className="font-semibold text-slate-900">{c.title}</p>
+                        <StatusBadge status={c.status} />
                       </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">
-                      {complaint.title}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {complaint.description}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <span
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          complaint.status === 'Resolved'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}
-                      >
-                        {complaint.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {new Date(complaint.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {complaint.status === 'Pending' && (
-                        <button
-                          onClick={() => handleResolve(complaint._id)}
-                          disabled={updating[complaint._id]}
-                          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition disabled:opacity-50 text-sm font-medium"
-                        >
-                          {updating[complaint._id] ? '⏳' : '✅ Resolve'}
-                        </button>
-                      )}
-                      {complaint.status === 'Resolved' && (
-                        <span className="text-gray-600 text-sm">Resolved</span>
-                      )}
-                    </td>
-                  </tr>
+                      <p className="text-sm text-slate-600 break-words">{c.description}</p>
+                      <p className="text-xs text-slate-500 mt-2">
+                        {c.studentId?.name || 'Unknown'} · {c.studentId?.email || 'N/A'} · {new Date(c.createdAt).toLocaleDateString()}
+                      </p>
+                      <div className="mt-3">{action(c)}</div>
+                    </Card>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+              </ul>
+            </>
+          )}
+        </main>
+      )}
     </div>
   );
 }

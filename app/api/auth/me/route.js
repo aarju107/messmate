@@ -1,56 +1,31 @@
-import connectDB from '@/app/lib/db';
-import User from '@/app/models/User';
 import { cookies } from 'next/headers';
+import { getCurrentUser, getSession, isAdminUser, json } from '@/app/lib/auth';
+import { SESSION_COOKIE } from '@/app/lib/session';
 
 export async function GET() {
   try {
-    await connectDB();
-    console.log('✅ Connected to database');
+    const session = await getSession();
+    if (!session) return json({ error: 'Not authenticated' }, 401);
 
-    // Get userId from cookie
-    const cookieStore = await cookies();
-    const userId = cookieStore.get('userId')?.value;
-
-    if (!userId) {
-      console.log('⚠️ No userId cookie found');
-      return new Response(
-        JSON.stringify({ error: 'Not authenticated' }),
-        { status: 401 }
-      );
-    }
-
-    console.log('🔍 Looking for user:', userId);
-
-    // Find user by ID
-    const user = await User.findById(userId);
+    const user = await getCurrentUser();
     if (!user) {
-      console.log('⚠️ User not found');
-      return new Response(
-        JSON.stringify({ error: 'User not found' }),
-        { status: 404 }
-      );
+      // Valid token but the account no longer exists: drop the cookie so the
+      // proxy doesn't bounce the browser between /login and /dashboard.
+      (await cookies()).delete(SESSION_COOKIE);
+      return json({ error: 'Not authenticated' }, 401);
     }
 
-    console.log('✅ User found:', user.name);
-
-    // Return user info (not password!)
-    return new Response(
-      JSON.stringify({
-        success: true,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-        },
-      }),
-      { status: 200 }
-    );
-
+    return json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: isAdminUser(user) ? 'admin' : 'student',
+      },
+    });
   } catch (error) {
-    console.error('❌ Error:', error.message);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500 }
-    );
+    console.error('Error:', error.message);
+    return json({ error: 'Something went wrong' }, 500);
   }
 }

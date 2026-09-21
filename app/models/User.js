@@ -9,18 +9,21 @@ const userSchema = new mongoose.Schema({
   email: {
     type: String,
     required: [true, 'Please provide an email'],
-    unique: [true, 'Email already exists'],
+    unique: true,
     lowercase: true,
-    match: [
-      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-      'Please provide a valid email',
-    ],
+    trim: true,
+    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email'],
   },
   password: {
     type: String,
     required: [true, 'Please provide a password'],
-    minlength: [6, 'Password must be at least 6 characters'],
-    select: false, // Don't return password by default
+    minlength: 6,
+    select: false,
+  },
+  role: {
+    type: String,
+    enum: ['student', 'admin'],
+    default: 'student',
   },
   createdAt: {
     type: Date,
@@ -28,7 +31,6 @@ const userSchema = new mongoose.Schema({
   },
 });
 
-// Check if model already exists (Next.js hot reload issue)
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 
 export default User;

@@ -1,88 +1,57 @@
 import connectDB from '@/app/lib/db';
 import Complaint from '@/app/models/Complaint';
-import { cookies } from 'next/headers';
+import { isAdminUser, json, requireUser } from '@/app/lib/auth';
 
-export async function GET(request) {
+// Admins get every complaint; students only get their own.
+export async function GET() {
   try {
+    const { user, error } = await requireUser();
+    if (error) return error;
     await connectDB();
-    console.log('✅ Connected to database');
 
-    // Get all complaints
-    const complaints = await Complaint.find()
+    const filter = isAdminUser(user) ? {} : { studentId: user._id };
+    const complaints = await Complaint.find(filter)
       .populate('studentId', 'name email')
       .sort({ createdAt: -1 });
 
-    console.log('✅ Fetched complaints:', complaints.length);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        complaints,
-      }),
-      { status: 200 }
-    );
-
+    return json({ success: true, complaints });
   } catch (error) {
-    console.error('❌ Error:', error.message);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500 }
-    );
+    console.error('Complaints GET error:', error.message);
+    return json({ error: 'Something went wrong' }, 500);
   }
 }
 
 export async function POST(request) {
   try {
+    const { user, error } = await requireUser();
+    if (error) return error;
     await connectDB();
-    console.log('✅ Connected to database');
 
-    // Get userId from cookie
-    const cookieStore = await cookies();
-    const userId = cookieStore.get('userId')?.value;
+    const body = await request.json().catch(() => ({}));
+    const title = String(body.title || '').trim();
+    const description = String(body.description || '').trim();
 
-    if (!userId) {
-      return new Response(
-        JSON.stringify({ error: 'Not authenticated' }),
-        { status: 401 }
-      );
-    }
-
-    // Get form data
-    const { title, description } = await request.json();
-    console.log('📝 Received complaint from user:', userId);
-
-    // Validation
     if (!title || !description) {
-      return new Response(
-        JSON.stringify({ error: 'Title and description are required' }),
-        { status: 400 }
-      );
+      return json({ error: 'Title and description are required' }, 400);
+    }
+    if (title.length > 120) return json({ error: 'Title is too long (max 120 characters)' }, 400);
+    if (description.length > 2000) {
+      return json({ error: 'Description is too long (max 2000 characters)' }, 400);
     }
 
-    // Create complaint
-    const newComplaint = await Complaint.create({
+    const complaint = await Complaint.create({
       title,
       description,
-      studentId: userId,
+      studentId: user._id,
       status: 'Pending',
     });
 
-    console.log('✅ Complaint created:', newComplaint._id);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'Complaint submitted successfully',
-        complaintId: newComplaint._id,
-      }),
-      { status: 201 }
+    return json(
+      { success: true, message: 'Complaint submitted successfully', complaintId: complaint._id },
+      201
     );
-
   } catch (error) {
-    console.error('❌ Error:', error.message);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500 }
-    );
+    console.error('Complaints POST error:', error.message);
+    return json({ error: 'Something went wrong' }, 500);
   }
 }

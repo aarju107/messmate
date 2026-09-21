@@ -1,55 +1,30 @@
 import connectDB from '@/app/lib/db';
 import Complaint from '@/app/models/Complaint';
+import { isValidId, json, requireAdmin } from '@/app/lib/auth';
 
 export async function PATCH(request, { params }) {
   try {
+    const { error } = await requireAdmin();
+    if (error) return error;
     await connectDB();
-    console.log('✅ Connected to database');
 
-    const { id } = params;
-    console.log('📝 Updating complaint:', id);
+    const { id } = await params; // params is a Promise in Next 15+
+    if (!isValidId(id)) return json({ error: 'Invalid complaint id' }, 400);
 
-    // Get update data
-    const { status } = await request.json();
-
-    // Validation
-    if (!status || !['Pending', 'Resolved'].includes(status)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid status' }),
-        { status: 400 }
-      );
+    const { status } = await request.json().catch(() => ({}));
+    if (!['Pending', 'Resolved'].includes(status)) {
+      return json({ error: 'Invalid status' }, 400);
     }
 
-    // Update complaint
-    const updatedComplaint = await Complaint.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true }
-    ).populate('studentId', 'name email');
-
-    if (!updatedComplaint) {
-      return new Response(
-        JSON.stringify({ error: 'Complaint not found' }),
-        { status: 404 }
-      );
-    }
-
-    console.log('✅ Complaint updated:', updatedComplaint._id);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'Complaint updated successfully',
-        complaint: updatedComplaint,
-      }),
-      { status: 200 }
+    const complaint = await Complaint.findByIdAndUpdate(id, { status }, { returnDocument: 'after' }).populate(
+      'studentId',
+      'name email'
     );
+    if (!complaint) return json({ error: 'Complaint not found' }, 404);
 
+    return json({ success: true, message: 'Complaint updated successfully', complaint });
   } catch (error) {
-    console.error('❌ Error:', error.message);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500 }
-    );
+    console.error('Complaint PATCH error:', error.message);
+    return json({ error: 'Something went wrong' }, 500);
   }
 }

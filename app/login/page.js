@@ -2,24 +2,18 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Navbar from '../components/Navbar';
+import Link from 'next/link';
+import AuthShell from '../components/AuthShell';
+import { Alert, Field, btn, btnBase, inputCls, ring } from '../components/ui';
 
 export default function Login() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const [formData, setFormData] = useState({ email: '', password: '' });
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
+  const handleChange = (e) => setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,118 +21,59 @@ export default function Login() {
     setMessage({ type: '', text: '' });
 
     try {
-      console.log('📤 Sending login data to API...');
-
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
-
       const data = await response.json();
-      console.log('📥 API Response:', data);
 
       if (!response.ok) {
-        // Error response
         setMessage({ type: 'error', text: data.error || 'Login failed' });
         setLoading(false);
         return;
       }
 
-      // Success
       setMessage({ type: 'success', text: 'Login successful! Redirecting...' });
-      console.log('✅ User logged in:', data.user);
-
-      // Redirect to dashboard after 1 second
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 1000);
-
-    } catch (error) {
-      console.error('❌ Network error:', error.message);
+      router.replace(data.user.role === 'admin' ? '/admin/dashboard' : '/dashboard');
+    } catch {
       setMessage({ type: 'error', text: 'Network error. Please try again.' });
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      <Navbar />
+    <AuthShell
+      title="Welcome back"
+      subtitle="Log in to see today's menu and track your complaints."
+      footer={<>Don&apos;t have an account?{' '}<Link href="/register" className="text-blue-600 hover:underline font-semibold">Register here</Link></>}
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <Alert type={message.type}>{message.text}</Alert>
 
-      <div className="max-w-md mx-auto px-6 py-12">
-        <h2 className="text-3xl font-bold text-gray-900 mb-8 text-center">
-          Login
-        </h2>
+        <Field label="Email" id="email">
+          <input id="email" type="email" name="email" autoComplete="email" value={formData.email}
+            onChange={handleChange} placeholder="you@example.com" disabled={loading} required
+            className={`${inputCls} ${ring.blue}`} />
+        </Field>
 
-        {/* Success Message */}
-        {message.type === 'success' && (
-          <div className="mb-6 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
-            {message.text}
+        <Field label="Password" id="password">
+          <div className="relative">
+            <input id="password" type={showPassword ? 'text' : 'password'} name="password" autoComplete="current-password"
+              value={formData.password} onChange={handleChange} placeholder="Your password" disabled={loading} required
+              className={`${inputCls} ${ring.blue} pr-16`} />
+            <button type="button" onClick={() => setShowPassword((s) => !s)}
+              className="absolute inset-y-0 right-0 px-3 text-sm text-slate-500 hover:text-slate-800"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}>
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
           </div>
-        )}
+        </Field>
 
-        {/* Error Message */}
-        {message.type === 'error' && (
-          <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-            {message.text}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="bg-white p-8 rounded-lg shadow-md">
-          {/* Email Field */}
-          <div className="mb-6">
-            <label className="block text-gray-700 font-medium mb-2">Email</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="your@email.com"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-              required
-            />
-          </div>
-
-          {/* Password Field */}
-          <div className="mb-8">
-            <label className="block text-gray-700 font-medium mb-2">Password</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="Your password"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-              required
-            />
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full font-bold py-2 rounded-lg transition ${
-              loading
-                ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-          >
-            {loading ? 'Logging in...' : 'Login'}
-          </button>
-
-          {/* Register Link */}
-          <p className="text-center text-gray-600 mt-6">
-            Don't have an account?{' '}
-            <a href="/register" className="text-blue-600 hover:underline font-medium">
-              Register here
-            </a>
-          </p>
-        </form>
-      </div>
-    </div>
+        <button type="submit" disabled={loading} className={`${btnBase} ${btn.blue} w-full`}>
+          {loading ? 'Logging in...' : 'Login'}
+        </button>
+      </form>
+    </AuthShell>
   );
 }

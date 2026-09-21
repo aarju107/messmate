@@ -4,6 +4,7 @@ const menuSchema = new mongoose.Schema({
   date: {
     type: Date,
     required: [true, 'Please provide a date'],
+    unique: true, // one menu per day (stored at UTC midnight)
   },
   breakfast: {
     type: String,

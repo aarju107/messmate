@@ -1,167 +1,100 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import AdminNavbar from '../../components/AdminNavbar';
+import MealGrid, { formatDateLong, localDateKey } from '../../components/MealCard';
+import { Card, CardTitle, PageHeader, Spinner, StatusBadge, btn, btnBase } from '../../components/ui';
+import { useMe } from '../../lib/useMe';
 
 export default function AdminDashboard() {
-  const [formData, setFormData] = useState({
-    breakfast: '',
-    lunch: '',
-    snacks: '',
-    dinner: '',
-    date: new Date().toISOString().split('T')[0],
-  });
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
+  const { user, loading } = useMe('admin');
+  const [stats, setStats] = useState(null);
+  const [menu, setMenu] = useState(null);
+  const [pending, setPending] = useState([]);
+  const [dataLoading, setDataLoading] = useState(true);
+  const today = localDateKey();
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage({ type: '', text: '' });
-
-    try {
-      console.log('📤 Submitting menu to API...');
-
-      const response = await fetch('/api/menu', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-      console.log('📥 API Response:', data);
-
-      if (!response.ok) {
-        setMessage({ type: 'error', text: data.error || 'Failed to add menu' });
-        setLoading(false);
-        return;
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const [s, m, c] = await Promise.all([
+          fetch('/api/admin/stats'),
+          fetch(`/api/menu?date=${today}`),
+          fetch('/api/complaints'),
+        ]);
+        if (s.ok) setStats((await s.json()).stats);
+        if (m.ok) setMenu((await m.json()).menu);
+        if (c.ok) setPending((await c.json()).complaints.filter((x) => x.status === 'Pending').slice(0, 5));
+      } catch {} finally {
+        setDataLoading(false);
       }
+    })();
+  }, [user, today]);
 
-      setMessage({ type: 'success', text: 'Menu added successfully!' });
-      console.log('✅ Menu created');
-
-      setFormData({
-        breakfast: '',
-        lunch: '',
-        snacks: '',
-        dinner: '',
-        date: new Date().toISOString().split('T')[0],
-      });
-
-      setLoading(false);
-
-    } catch (error) {
-      console.error('❌ Error:', error.message);
-      setMessage({ type: 'error', text: 'Network error. Please try again.' });
-      setLoading(false);
-    }
-  };
+  const cards = stats && [
+    ['👥', 'Users', stats.totalUsers, 'bg-blue-50 text-blue-700'],
+    ['📋', 'Menus added', stats.totalMenus, 'bg-purple-50 text-purple-700'],
+    ['⏳', 'Pending', stats.pendingComplaints, 'bg-amber-50 text-amber-700'],
+    ['✅', 'Resolved', stats.resolvedComplaints, 'bg-emerald-50 text-emerald-700'],
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
+    <div className="min-h-screen bg-slate-50">
       <AdminNavbar />
+      {loading || !user ? (
+        <Spinner />
+      ) : (
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+          <PageHeader title={`Welcome, ${user.name.split(' ')[0]}`} subtitle="Here's what's happening in the mess today." />
 
-      <div className="max-w-2xl mx-auto px-6 py-12">
-        <h1 className="text-4xl font-bold text-gray-900 mb-8 text-center">
-          📋 Add Menu
-        </h1>
+          {cards && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              {cards.map(([icon, label, value, tint]) => (
+                <Card key={label} className="!p-4 sm:!p-5">
+                  <div className={`h-10 w-10 grid place-items-center rounded-xl text-xl mb-3 ${tint}`} aria-hidden="true">{icon}</div>
+                  <p className="text-3xl font-bold text-slate-900">{value}</p>
+                  <p className="text-sm text-slate-500">{label}</p>
+                </Card>
+              ))}
+            </div>
+          )}
 
-        {message.type === 'success' && (
-          <div className="mb-6 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
-            {message.text}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            <Card className="lg:col-span-3">
+              <CardTitle icon="📋" right={
+                <Link href="/admin/menu" className={`${btnBase} ${btn.purple}`}>{dataLoading ? 'Manage menu' : menu ? 'Edit menu' : 'Add menu'}</Link>
+              }>Today&apos;s menu</CardTitle>
+              <p className="text-sm text-slate-500 -mt-2 mb-4">{formatDateLong(today)}</p>
+              <MealGrid menu={menu} loading={dataLoading} />
+            </Card>
+
+            <Card className="lg:col-span-2">
+              <CardTitle icon="🎫" right={
+                <Link href="/admin/complaints" className="text-sm font-semibold text-purple-700 hover:underline">View all</Link>
+              }>Pending complaints</CardTitle>
+              {dataLoading ? (
+                <div className="h-24 rounded-xl bg-slate-100 animate-pulse" />
+              ) : pending.length === 0 ? (
+                <p className="text-slate-500 py-6 text-center">All caught up ✨</p>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {pending.map((c) => (
+                    <li key={c._id} className="py-3">
+                      <div className="flex justify-between gap-3">
+                        <p className="font-medium text-slate-900 truncate">{c.title}</p>
+                        <StatusBadge status={c.status} />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">{c.studentId?.name || 'Unknown'} · {new Date(c.createdAt).toLocaleDateString()}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
           </div>
-        )}
-
-        {message.type === 'error' && (
-          <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-            {message.text}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="bg-white p-8 rounded-lg shadow-md space-y-6">
-          <div>
-            <label className="block text-gray-700 font-medium mb-2">Date</label>
-            <input
-              type="date"
-              name="date"
-              value={formData.date}
-              onChange={handleChange}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-              disabled={loading}
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-medium mb-2">🥐 Breakfast</label>
-            <input
-              type="text"
-              name="breakfast"
-              value={formData.breakfast}
-              onChange={handleChange}
-              placeholder="e.g., Dosa, Sambar, Chutney"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 placeholder-gray-600"
-              disabled={loading}
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-medium mb-2">🍜 Lunch</label>
-            <input
-              type="text"
-              name="lunch"
-              value={formData.lunch}
-              onChange={handleChange}
-              placeholder="e.g., Paneer Butter Masala, Rice, Naan"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 placeholder-gray-600"
-              disabled={loading}
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-medium mb-2">🥤 Snacks</label>
-            <input
-              type="text"
-              name="snacks"
-              value={formData.snacks}
-              onChange={handleChange}
-              placeholder="e.g., Tea, Samosa, Biscuits"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 placeholder-gray-600"
-              disabled={loading}
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-700 font-medium mb-2">🍛 Dinner</label>
-            <input
-              type="text"
-              name="dinner"
-              value={formData.dinner}
-              onChange={handleChange}
-              placeholder="e.g., Dal Makhani, Roti, Rice"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 placeholder-gray-600"
-              disabled={loading}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-semibold disabled:opacity-50"
-          >
-            {loading ? '⏳ Adding...' : '📤 Add Menu'}
-          </button>
-        </form>
-      </div>
+        </main>
+      )}
     </div>
   );
 }
